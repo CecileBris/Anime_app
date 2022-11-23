@@ -1,0 +1,810 @@
+---
+title: "BRISSARD_TSO"
+output: html_document
+encoding: "utf-8"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE)
+
+library(ggplot2)
+library(tidyverse)
+library(readxl)
+library(magrittr)
+library(reshape)
+library(janitor) 
+library(cowplot)
+```
+
+# <span style="color:crimson">Projet: Programmation sous R – Sujet B : **anime.zip**</span>
+
+
+## Partie 1
+
+
+### <span style="color:cornflowerblue"> Question 1 </span>
+
+> Proposer un code permettant de regrouper les données contenues dans anime.zip dans un seul et même data.frame.
+
+Pour pouvoir charger des fichiers csv et les fusionner en un seul tableau, il faut que : 
+1. ils soient tous au même endroit (dans un même dossier);
+2. les variables (ou colonnes) soit identiques (nom et type). 
+
+Dans notre situation, les fichiers sont dans le même dossier "anime" et possèdent les mêmes colonnes, mais lorsque nous essayons de charger tous les fichiers en même temps, une erreur sort. Effectivement, un des fichiers ne possède pas le même type que les autres pour la colonne **'episode'**. Le fichier "anime_Unkwown" a une variable **'episode'** de type *character* et non pas *double* comme les autres fichiers. 
+
+```{r message=FALSE}
+anime_num <- list.files(path = "anime", full.names = TRUE) %>% 
+  lapply(read_csv) %>% 
+  bind_rows 
+```
+
+Nous avons chargé et fusionné tous les fichiers "anime_x" (**'episode'** de type *double*) ensemble (rappel : ils sont dans le même dossier).
+
+```{r message=FALSE}
+anime_unknown <- read_csv("anime_Unknown.csv", 
+                                 col_types = cols(episodes = col_double()))
+```
+
+Puis nous chargeons le dernier fichier, "anime_Unkwown" (qu'on a sorti du dossier), en précisant que nous voulons que la variable **'episode'** soit de type *double* (traduit alors par des NA.).
+
+```{r}
+animes <- rbind(anime_num, anime_unknown)
+animes
+```
+
+Enfin, nous regroupeons les deux *dataframes* précédents dans un unique *dataframe* que l'on nomme **"animes"**. Nous avons donc un *dataframe* composé de 12294 observations, pour 10 variables. 
+
+
+
+### <span style="color:cornflowerblue"> Question 2 </span>
+
+> Observer pour chaque variable, le nombre et la proportion de valeurs manquantes.
+
+```{r}
+#     Pour toute la table
+# nombre
+table(is.na(animes))
+# proportion
+sum(is.na(animes))/prod(dim(animes))
+
+#     Pour chaque variable 
+# nombre 
+summary(animes)
+sapply(animes, function(x) sum(is.na(x)))
+# proportion
+colMeans(is.na(animes))
+```
+
+Dans la colonne type, nous avons 25 valeurs *'NA'*. Nous décidons de changer ces valeurs *'NA'* en un autre type nommé **"Other"** et qui nous sera utile par la suite. 
+
+```{r}
+animes <- animes %>% replace_na(list(type = 'Other'))
+```
+
+
+
+
+### <span style="color:cornflowerblue"> Question 3 </span>
+
+> Représenter graphiquement la distribution du nombre d'épisodes.
+
+Tout d'abord, nous regroupons les lignes concernées : les animes de type **TV**. 
+
+```{r}
+anime_tv <- animes[animes$type %in% "TV", ]   
+anime_tv
+
+ggplot(anime_tv) +
+  aes(x = episodes) +
+  geom_density(alpha=0.3, colour = "mediumseagreen", fill = "mediumseagreen") + 
+  theme_linedraw() 
+```
+
+Pour pouvoir capter plus d'informations, il est plus pertinent de séparer les animes en deux groupes : le premier groupes contenant les animes ayant moins de 100 épisodes **'tv_inf'**, et le second contenant ceux de 100 épisodes ou plus **'tv_sup'**.  
+
+```{r}
+tv_inf <- subset (anime_tv, episodes < 100)
+tv_sup <- subset (anime_tv, episodes >= 100)
+
+ggplot(tv_inf) +
+  aes(x = episodes) +
+  geom_density(alpha=0.3, colour = "mediumseagreen", fill = "mediumseagreen") + 
+  theme_linedraw() 
+
+ggplot(tv_sup) +
+  aes(x = episodes) +
+  geom_density(alpha = 0.3, colour = "mediumseagreen", fill = "mediumseagreen") + 
+  theme_linedraw() 
+```
+
+
+
+### <span style="color:cornflowerblue"> Question 4 </span>
+
+> Combien d'animes n'ont pas le genre **'Shounen'** ?
+
+```{r message=FALSE}
+length(which(animes["genre"] == 'Shounen'))
+```
+
+Lorsque nous lançons ce code, nous n'obtenons que 9 animes de genre **'Shounen'**, cela est du au fait que *R* prend chaque valeur de la colonne comme étant un seul genre, même lorsque plusieurs genres sont listés. 
+
+```{r}
+nb_shounen <- sum(str_detect(animes$genre,'Shounen'), na.rm = TRUE)
+nb_shounen
+
+non_shounen = nrow(animes) - nb_shounen
+non_shounen
+```
+
+Parmi les 12294 animes, 10518 ne possèdent pas le genre **'Shounen'**. 
+
+
+
+### <span style="color:cornflowerblue"> Question 5 </span>
+
+> Donner la proportion de **'Shounen'** au sein de chaque type d'anime.
+
+
+```{r message=FALSE}
+genre_split <- data.frame(do.call("rbind", strsplit(as.character(animes$genre), ", ", fixed = FALSE)))
+```
+
+Ce code permet de faire ressortir le caractère héréditaire des valeurs de R, qui entre alors en compte. Nous savons donc qu'il y a 13 genres au maximum pour un anime, et lorsqu'il y en a moins, chaque genre sera répété jusqu'à 13 fois. Il faut donc séparer chaque genre, et faire en sorte que les genres ne soient pas répétés. 
+
+Finalement, nous ne gardons que le premier genre de chaque anime, dans une variable nommée **"main_genre"**.
+
+```{r}
+animes <- separate(animes, genre, into = "main_genre", sep = ", ")
+```
+
+Le nombre d'occurence est comptée pour chaque genre d'anime par type avec la fonction *tabyl*. Les résultats sont stockés dans le dataframe **genre_df**.  
+
+```{r, include = FALSE}
+genre_count <- tabyl(animes,main_genre,type)
+genre_df <- as.data.frame(genre_count)
+```
+
+Pour trouver le nombre de genre **'Shounen'** par type : 
+
+```{r}
+genre_df %>% 
+  filter(main_genre == "Shounen")
+```
+
+*/!\ Remarque :*
+
+Avec uniquement le genre principal, nous ne trouvons que 49 animes de genre **'Shounen'** (au lieu de 1776 précédemment). Ce problème sera relevé dans la question 11.
+
+```{r}
+sum(str_detect(animes$main_genre, 'Shounen'), na.rm = TRUE)
+```
+
+
+
+### <span style="color:cornflowerblue"> Question 6 </span>
+
+> Créer une fonction permettant de donner la proportion d'un genre quelconque au sein de chaque type d'anime.
+
+```{r}
+func_gcount <- function(x){
+  genre_df %>% 
+  filter(main_genre == x)
+}
+
+func_gcount("Shoujo")
+```
+
+Il suffit d'écrire *func_gcount(x)*, **x** étant le nom d'un genre, à écrire avec des guillemets. 
+
+
+
+### <span style="color:cornflowerblue"> Question 7 </span>
+
+> Proposer une représentation graphique permettant d'observer au sein de chaque type d'anime, quels genres sont les plus représentés.
+
+```{r}
+top_genre <- animes %>%
+  group_by(main_genre) %>%
+  summarise(count = n()) %>%
+  top_n(n = 10, wt = count)
+
+top_genres <- c("Comedy", "Action", "Adventure", "Drama", "Hentai", "Fantasy", "Music", "Kids", "Dementia", "Historical")
+```
+
+
+```{r}
+animes %>%
+ filter((main_genre %in% top_genres) & !is.na(main_genre)) %>%
+ filter(!is.na(type)) %>%
+  ggplot() + 
+  geom_point(aes(x = type, y = main_genre, fill = main_genre, color = main_genre), 
+            size = 1, alpha = 0.5) +
+  labs(
+    x = "Type",
+    y = "Genre",
+    title = "Representation of genre by type"
+  ) +
+  facet_grid(~type, scales="free_x") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  theme_linedraw() 
+```
+
+Avec ce type de représentation, nous n'avons pas le nombre (ou count). Nous pouvons donc faire plus précis...
+
+```{r}
+animes %>%
+  filter((main_genre %in% top_genres) & !is.na(main_genre)) %>%
+  filter(!is.na(type)) %>%
+  ggplot() + 
+  geom_jitter(aes(x = type, y = main_genre, fill = main_genre, color = main_genre), alpha = 0.5) +
+  labs(
+    x = "Type",
+    y = "Genre",
+    title = "Representation of genre by type"
+  ) +
+  facet_grid(~type, scales = "free_x") + 
+  theme(plot.title = element_text(hjust = 0.5)) +
+  theme_linedraw()
+```
+
+...Ou utiliser un autre type de représentation, qui sera plus parlante : l'histogramme.  
+
+```{r}
+animes %>%
+  filter((main_genre %in% top_genres) & !is.na(main_genre)) %>%
+  filter(!is.na(type)) %>%
+  ggplot() + 
+  geom_bar(aes(x = type, fill = main_genre), position = "dodge") +
+  labs(
+    x = "Type",
+    y = "Genre",
+    title = "Representation of genre by type"
+  ) +
+  facet_grid(~type, scales="free_x") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  theme_linedraw() +
+  theme(legend.position="bottom")
+```
+
+Ici, nous avons volontairement choisi de séparer le comptage pour chaque genre (*position = "dodge"*) : ainsi, le nombre *count* ressort séparément pour chaque genre. Sans cette option, les genres seraient positionnés les uns au dessus des autres. 
+
+
+
+### <span style="color:cornflowerblue"> Question 8 </span>
+
+> Pour toutes les variables de types « rating ». Calculer la moyenne, la médiane, l’écart type, la mad (median absolute deviation), le coefficient de variation, la valeur maximum et la valeur minimum. Représentez graphiquement ces résultats.
+
+Il s'agit des variables : '**rating**', '**rating_10**', '**rating_1000**', ''**rating_1000**''. 
+
+Calculs de la moyenne, la médiane, la valeur maximum et la valeur minimum. 
+
+```{r}
+
+#Création d'un vecteur contenant les variable pour pouvoir filtrer le dataframe
+ratings <- c('rating', 'rating_10', 'rating_100', 'rating_1000')
+
+#Summary appliqué sur les variables d'animes contenues dans le vecteur ratings
+stat_animes <- do.call(cbind, lapply(animes %>% select_if(colnames(animes) %in% ratings), summary))
+stats_animes <- as.data.frame(stat_animes)
+
+```
+
+
+Il nous manque trois des statistiques demandées [l’écart type, la median absolute deviation, le coefficient de variation] : celles-ci ne sont pas dans la fonction *summary()*.
+
+Nous les calculons donc à l'aide de fonctions: 
+
+```{r}
+# Fonction pour la median absolute deviation :
+
+mad_stat <- function(x){
+  animes %>% 
+  select_if(colnames(animes) %in% ratings)
+  mad <- mad(x, center = 1, constant = 1.4826, na.rm = TRUE, low = FALSE, high = FALSE) 
+  return(mad)
+}
+
+rating <- mad_stat(animes$rating)
+rating_10 <- mad_stat(animes$rating_10)
+rating_100 <- mad_stat(animes$rating_100)
+rating_1000 <- mad_stat(animes$rating_1000)
+
+#R ésultats regroupés dans un dataframe
+
+mad <- cbind(rating,rating_10, rating_100, rating_1000) 
+
+# Fonction pour l'écart-type :
+
+sd_stat <- function(x){
+  animes %>% 
+  select_if(colnames(animes) %in% ratings)
+  sd <- sd(x,na.rm=TRUE)
+  return(sd)
+}
+
+rating <- sd_stat(animes$rating) 
+rating_10 <- sd_stat(animes$rating_10)
+rating_100 <- sd_stat(animes$rating_100)
+rating_1000 <- sd_stat(animes$rating_1000)
+
+sd <- cbind(rating,rating_10, rating_100, rating_1000)
+
+# Fonction pour le coefficient de variation :
+
+cv_stat <- function(x){
+  animes %>% 
+  select_if(colnames(animes) %in% ratings)
+  cv <- (sd(x,na.rm=TRUE)/mean(x,na.rm=TRUE))*100
+  return(cv)
+}
+
+rating <- cv_stat(animes$rating)
+rating_10 <- cv_stat(animes$rating_10)
+rating_100 <- cv_stat(animes$rating_100)
+rating_1000 <- cv_stat(animes$rating_1000)
+
+cv <- cbind(rating,rating_10, rating_100, rating_1000)
+
+# Concaténation des statistiques supplémentaires avec celles récupérées du summary().
+
+stats_animes <- rbind(stats_animes, mad, sd, cv)
+
+# Les lignes ainsi ajoutées sont renommées comme suit : 
+
+rownames(stats_animes) <- c("Min.", "1st Qu.", "Median", "Mean", "3rd Qu.", "Max.", "NA's", "Mad", "Sd", "Cv")
+stats_animes
+```
+
+Représentation graphiques des résultats. 
+
+```{r}
+Rating <- animes %>%
+ filter(!is.na(main_genre)) %>%
+ ggplot() +
+  aes(x = "", y = rating) +
+  geom_boxplot(shape = "circle", fill = "mediumseagreen") +
+  labs(
+    x = "Rating",
+    y = "Distribution",
+    title = "Distribution de ‘rating’ "
+  ) +
+  theme_linedraw() +
+  theme(plot.title = element_text(hjust = 0.5))
+
+Rating_10 <- animes %>%
+ filter(!is.na(main_genre)) %>%
+ ggplot() +
+  aes(x = "", y = rating_10) +
+  geom_boxplot(shape = "circle", fill = "mediumseagreen") +
+  labs(
+    x = "Rating_10",
+    y = "Distribution",
+    title = "Distribution de ‘rating_10’ "
+  ) +
+  theme_linedraw() +
+  theme(plot.title = element_text(hjust = 0.5))
+
+Rating_100 <- animes %>%
+ filter(!is.na(main_genre)) %>%
+ ggplot() +
+  aes(x = "", y = rating_100) +
+  geom_boxplot(shape = "circle", fill = "mediumseagreen") +
+  labs(
+    x = "Rating_100",
+    y = "Distribution",
+    title = "Distribution de ‘rating_100’ "
+  ) +
+  theme_linedraw() +
+  theme(plot.title = element_text(hjust = 0.5))
+
+Rating_1000 <- animes %>%
+ filter(!is.na(main_genre)) %>%
+ ggplot() +
+  aes(x = "", y = rating_1000) +
+  geom_boxplot(shape = "circle", fill = "mediumseagreen") +
+  labs(
+    x = "Rating_1000",
+    y = "Distribution",
+    title = "Distribution de ‘rating_1000’ "
+  ) +
+  theme_linedraw() +
+  theme(plot.title = element_text(hjust = 0.5))
+
+plot_grid(Rating, Rating_10, Rating_100, Rating_1000, labels = '', ncol = 4)
+```
+
+
+
+### <span style="color:cornflowerblue"> Question 9  </span>
+
+> Proposer une représentation graphique permettant d’observer s’il existe une différence de notation en fonction du genre d’anime.
+
+Comme précédemment, nous continuerons ici à n'utiliser que les genres principaux. 
+
+```{r}
+Genre_rating <- animes %>%
+  filter((main_genre %in% top_genres) & !is.na(main_genre)) %>%
+  ggplot() +
+  aes(x = main_genre, y = rating, fill = main_genre) +
+  geom_boxplot(shape = "circle") +
+  scale_fill_hue(direction = 1) +
+  # coord_flip() +
+  theme_minimal() +
+  ylim(0, 10) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 90))
+
+Genre_rating10 <- animes %>%
+  filter((main_genre %in% top_genres) & !is.na(main_genre)) %>%
+  ggplot() +
+  aes(x = main_genre, y = rating_10, fill = main_genre) +
+  geom_boxplot(shape = "circle") +
+  scale_fill_hue(direction = 1) +
+  # coord_flip() +
+  theme_minimal() +
+  ylim(0, 10) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 90))
+
+Genre_rating100 <- animes %>%
+  filter((main_genre %in% top_genres) & !is.na(main_genre)) %>%
+  ggplot() +
+  aes(x = main_genre, y = rating_100, fill = main_genre) +
+  geom_boxplot(shape = "circle") +
+  scale_fill_hue(direction = 1) +
+  # coord_flip() +
+  theme_minimal() +
+  ylim(0, 100) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 90))
+
+Genre_rating1000 <- animes %>%
+  filter((main_genre %in% top_genres) & !is.na(main_genre)) %>%
+  ggplot() +
+  aes(x = main_genre, y = rating_1000, fill = main_genre) +
+  geom_boxplot(shape = "circle") +
+  scale_fill_hue(direction = 1) +
+  theme_minimal() +
+  ylim(0, 1000) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 90))
+
+plot_grid(Genre_rating, Genre_rating10, Genre_rating100, Genre_rating1000, labels = "AUTO", ncol = 4)
+```
+
+Avec ce type de représentation, nous pouvons visuellement comparer les notes moyennes, minimum et maximum obtenues pour chaque genre, par type. 
+
+
+
+### <span style="color:cornflowerblue"> Question 10 </span>
+
+> Pour chaque genre d’anime, représenter graphiquement le top 10 des animes les mieux notés. 
+
+Nous cherchons le top 10 des animes par genre parmi les 10 genres les plus représentés dans notre échantillon. 
+
+```{r}
+top_anime <- animes %>% 
+  arrange(desc(rating)) %>% 
+  group_by(main_genre) %>% slice(1:10)
+
+top_anime
+```
+
+
+Nous pouvons ensuite effectuer un graphique représentant les top 10 de chaque genre. 
+
+```{r}
+top_anime %>%
+  filter((main_genre %in% top_genres) & !is.na(main_genre)) %>%
+  ggplot() +
+  aes(x = main_genre, y = rating) +
+  geom_point(alpha = 0.7,shape = "circle", colour = "mediumseagreen") +
+  scale_fill_hue(direction = 1) +
+  theme_minimal() +
+  ylim(6.87, 10) +
+  theme(legend.position="none",axis.text.x = element_text(angle = 90)) +
+  facet_grid(~main_genre, scales = "free_x") 
+```
+
+Pour avoir le détails de chaque animes avec leur nom, nous avons créé une fonction. Pour l'utiliser, il suffit d'entrer comme argument **x** le nom du genre souhaité entre guillemets. 
+
+```{r}
+func_top_anime <- function(x){
+  top_anime %>%
+    filter((main_genre %in% c(x)) & !is.na(main_genre)) %>%
+    ggplot() + 
+    geom_col(aes(x = name, y = rating, fill = name), position = "dodge") +
+    theme(plot.title = element_text(hjust = 0.5)) +
+    theme_linedraw() +
+    theme(legend.position = "right") +
+    facet_grid(~main_genre, scales = "free_x") +
+    theme(axis.text.x = element_blank(),
+          axis.ticks.x = element_blank())
+}
+
+func_top_anime("Kids")
+```
+
+
+### <span style="color:cornflowerblue"> Question 11 </span>
+
+> Etablir une critique sur les données et les statistiques que vous avez produites. Proposer éventuellement d’autres analyses pour compléter.
+
+Nous remarquons qu'à un caractère spécial près ou à une date près indiquée entre parenthèses, il existe des doublons. Cependant, par manque d'information dans les bases de données fournies, il nous est impossible de traiter ces doublons. Nous supposons que certains constituent des remakes d'animes préexistant mais ne pouvons le confirmer en l'absence d'une variable **date**. Si une telle variable nous était fournie nous aurions pu traiteer les doublons de la colonne **'Name'**. 
+
+Notre second problème est la présence de plusieurs genres séparés par des virgules dans la colonne **'genre'**. Nous avons effectuées les questions en choissisant de ne sélectionner que le premier genre, pensant que celui-ci était le genre principal de l'anime. Cependant, après nous être rendu compte que les genres étaient uniquement classés par ordre alphabétique, nous décidons de proposer un traitement différent de cette variable.
+
+Nous nous proposons de créer des variables **dummy** pour chaque genre, afin de pouvoir prendre en compte tous les genres pour chaque anime en remplaçant les valeurs manquantes *'NA'* par **0**.
+
+```{r}
+
+animes_bonus <- rbind(anime_num, anime_unknown)
+
+Dum <- function(x){
+  flg <- ifelse(str_detect(animes_bonus$genre, as.character(x)), 1, 0) 
+  flg <- replace_na(flg, 0)
+  return(flg)
+}
+
+animes_bonus$Drama <- Dum("Drama")
+animes_bonus$Action <- Dum("Action")
+animes_bonus$Adventure <- Dum("Adventure")
+animes_bonus$Fantasy <- Dum("Fantasy")
+animes_bonus$Comedy <- Dum("comedy")
+animes_bonus$Sci_Fi <- Dum("Sci-Fi")
+animes_bonus$Military <- Dum("Military")
+animes_bonus$Romance <- Dum("Romance")
+animes_bonus$Mystery <- Dum("Mystery")
+animes_bonus$Dementia <- Dum("Dementia")
+animes_bonus$Music <- Dum("Music")
+animes_bonus$Mecha <- Dum("Mecha")
+animes_bonus$School <- Dum("School")
+animes_bonus$Game <- Dum("Game")
+animes_bonus$Historical <- Dum("Historical")
+animes_bonus$Cars <- Dum("Cars")
+animes_bonus$Shounen <- Dum("Shounen")
+animes_bonus$Harem <- Dum("Harem")
+animes_bonus$Horror <- Dum("Horror")
+animes_bonus$Martial_Arts <- Dum("Martial Arts")
+animes_bonus$Ecchi <- Dum("Ecchi")
+animes_bonus$Kids <- Dum("Kids")
+animes_bonus$Slice_of_Life <- Dum("Slice of Life")
+animes_bonus$Demons <- Dum("Demons")
+animes_bonus$Magic <- Dum("Magic")
+animes_bonus$Sports <- Dum("Sports")
+animes_bonus$Shoujo <- Dum("Shoujo")
+animes_bonus$Psychological <- Dum("Psychological")
+animes_bonus$Police <- Dum("Police")
+animes_bonus$Thriller <- Dum("Thriller")
+animes_bonus$Parody <- Dum("Parody")
+animes_bonus$Supernatural <- Dum("Supernatural")
+animes_bonus$Seinen <- Dum("Seinen")
+animes_bonus$Samurai <- Dum("Samurai")
+animes_bonus$Super_Power <- Dum("Super Power")
+animes_bonus$Vampire <- Dum("Vampire")
+animes_bonus$Josei <- Dum("Josei")
+animes_bonus$Hentai <- Dum("Hentai")
+animes_bonus$Yaoi <- Dum("Yaoi")
+animes_bonus$Space <- Dum("Space")
+animes_bonus$Shoujo_Ai <- Dum("Shoujo Ai")
+animes_bonus$Shounen_Ai <- Dum("Shounen Ai")
+animes_bonus$Yuri <- Dum("Yuri")
+
+summary(animes_bonus)
+```
+
+Les réponses aux questions 4 à 6 et 10 sont donc retravaillées sur la dataframe **'animes_bonus'** ainsi obtenu :
+
+
+#### <span style="color:cornflowerblue"> Question 11.4 </span>
+
+```{r}
+not_shounen <- length(animes_bonus$name) - sum(animes_bonus$Shounen)
+not_shounen
+```
+
+On retrouve bien 10518 animes ne possédant pas le genre **'Shounen'**. 
+
+
+#### <span style="color:cornflowerblue"> Question 11.5 </span>
+
+```{r, include = FALSE}
+shounen_count <- tabyl(animes_bonus,Shounen,type)
+shounen_df <- as.data.frame(shounen_count)
+```
+
+Pour trouver le nombre de genre **'Shounen'** par type : 
+
+```{r}
+shounen_df[2,] 
+```
+
+
+#### <span style="color:cornflowerblue"> Question 11.6 </span>
+
+Fonction qui compte le nombre d'animes par type.
+
+```{r}
+
+dumcount <- function(x){
+  animes_bonus %>% 
+  group_by(type) %>% 
+  count(colname=x)
+}
+
+dumcount("Drama")
+dumcount("Action")
+dumcount("Adventure")
+dumcount("Fantasy")
+dumcount("comedy")
+dumcount("Sci-Fi")
+dumcount("Military")
+dumcount("Romance")
+dumcount("Mystery")
+dumcount("Dementia")
+dumcount("Music")
+dumcount("Mecha")
+dumcount("School")
+dumcount("Game")
+dumcount("Historical")
+dumcount("Cars")
+dumcount("Shounen")
+dumcount("Harem")
+dumcount("Horror")
+dumcount("Martial Arts")
+dumcount("Ecchi")
+dumcount("Kids")
+dumcount("Slice of Life")
+dumcount("Demons")
+dumcount("Magic")
+dumcount("Sports")
+dumcount("Shoujo")
+dumcount("Psychological")
+dumcount("Police")
+dumcount("Thriller")
+dumcount("Parody")
+dumcount("Supernatural")
+dumcount("Seinen")
+dumcount("Samurai")
+dumcount("Super Power")
+dumcount("Vampire")
+dumcount("Josei")
+dumcount("Hentai")
+dumcount("Yaoi")
+dumcount("Space")
+dumcount("Shoujo Ai")
+dumcount("Shounen Ai")
+dumcount("Yuri")
+```
+
+
+#### <span style="color:cornflowerblue"> Question 11.10 </span>
+
+
+```{r}
+#On réalise une fonction pour sortir un dataframe donnant le top 10 des notes pour chaque genre.
+
+rating_topten <- function(x){
+  df10 <- animes_bonus %>% 
+  filter(x == 1) %>% 
+  arrange(desc(rating)) %>% 
+  slice(1:10)
+  return(df10)
+  
+  }
+
+top1 <- rating_topten(animes_bonus$Drama)
+top2 <- rating_topten(animes_bonus$Action)
+top3 <- rating_topten(animes_bonus$Adventure)
+top4 <- rating_topten(animes_bonus$Fantasy)
+top5 <- rating_topten(animes_bonus$Comedy) #il n'y a pas de top 10
+top6 <- rating_topten(animes_bonus$Sci_Fi)
+top7 <- rating_topten(animes_bonus$Military)
+top8 <- rating_topten(animes_bonus$Romance)
+top9 <- rating_topten(animes_bonus$Mystery)
+top10 <- rating_topten(animes_bonus$Dementia)
+top11 <- rating_topten(animes_bonus$Music)
+top12 <- rating_topten(animes_bonus$Mecha)
+top13 <- rating_topten(animes_bonus$School)
+top14 <- rating_topten(animes_bonus$Game)
+top15 <- rating_topten(animes_bonus$Historical)
+top16 <- rating_topten(animes_bonus$Cars)
+top17 <- rating_topten(animes_bonus$Shounen)
+top18 <- rating_topten(animes_bonus$Harem)
+top19 <- rating_topten(animes_bonus$Horror)
+top20 <- rating_topten(animes_bonus$Martial_Arts)
+top21 <- rating_topten(animes_bonus$Ecchi)
+top22 <- rating_topten(animes_bonus$Kids)
+top23 <- rating_topten(animes_bonus$Slice_of_Life)
+top24 <- rating_topten(animes_bonus$Demons)
+top25 <- rating_topten(animes_bonus$Magic)
+top26 <- rating_topten(animes_bonus$Sports)
+top27 <- rating_topten(animes_bonus$Shoujo)
+top28 <- rating_topten(animes_bonus$Psychological)
+top29 <- rating_topten(animes_bonus$Police)
+top30 <- rating_topten(animes_bonus$Thriller)
+top31 <- rating_topten(animes_bonus$Parody)
+top32 <- rating_topten(animes_bonus$Supernatural)
+top33 <- rating_topten(animes_bonus$Seinen)
+top34 <- rating_topten(animes_bonus$Samurai)
+top35 <- rating_topten(animes_bonus$Super_Power)
+top36 <- rating_topten(animes_bonus$Vampire)
+top37 <- rating_topten(animes_bonus$Josei)
+top38 <- rating_topten(animes_bonus$Hentai)
+top39 <- rating_topten(animes_bonus$Yaoi)
+top40 <- rating_topten(animes_bonus$Space)
+top41 <- rating_topten(animes_bonus$Shoujo_Ai)
+top42 <- rating_topten(animes_bonus$Shounen_Ai)
+top43 <- rating_topten(animes_bonus$Yuri)
+
+#On regroupe les 43 dataframes obtenu dans un seul nommé animes_topten.
+
+animes_topten <- rbind(top1,top2, top3, top4, top5, top6, top7, top8, top9, top10, top11, top12, top13, top14, top15, top16,
+                       top17, top18, top19, top20, top21, top22, top23, top24, top25, top26, top27, top28, top29, top30,
+                       top31, top32, top33, top34, top35, top36, top37, top38, top39, top40, top41, top42, top43)
+
+#On réalise une fonction qui affiche un barchart des 10 premiers anime selon la notation, par genre.
+
+top_plot <- function(x){
+  animes_topten %>%
+    filter(x == 1) %>%
+    arrange(desc(rating)) %>% 
+    slice(1:10) %>%
+    ggplot() + 
+    geom_col(aes(x = name, y = rating, fill = name), position = "dodge") +
+    theme(plot.title = element_text(hjust = 0.5)) +
+    theme_linedraw() +
+    theme(legend.position = "right") +
+    theme(axis.text.x = element_blank(),
+          axis.ticks.x = element_blank())
+}
+top_plot(animes_topten$Drama)
+top_plot(animes_topten$Action)
+top_plot(animes_topten$Adventure)
+top_plot(animes_topten$Comedy)
+top_plot(animes_topten$Fantasy)
+top_plot(animes_topten$Sci_Fi)
+top_plot(animes_topten$Military)
+top_plot(animes_topten$Romance)
+top_plot(animes_topten$Mystery)
+top_plot(animes_topten$Dementia)
+top_plot(animes_topten$Music)
+top_plot(animes_topten$Mecha)
+top_plot(animes_topten$School)
+top_plot(animes_topten$Game)
+top_plot(animes_topten$Historical)
+top_plot(animes_topten$Cars)
+top_plot(animes_topten$Shounen)
+top_plot(animes_topten$Harem)
+top_plot(animes_topten$Horror)
+top_plot(animes_topten$Martial_Arts)
+top_plot(animes_topten$Ecchi)
+top_plot(animes_topten$Kids)
+top_plot(animes_topten$Slice_of_Life)
+top_plot(animes_topten$Demons)
+top_plot(animes_topten$Magic)
+top_plot(animes_topten$Sports)
+top_plot(animes_topten$Shoujo)
+top_plot(animes_topten$Psychological)
+top_plot(animes_topten$Police)
+top_plot(animes_topten$Thriller)
+top_plot(animes_topten$Parody)
+top_plot(animes_topten$Supernatural)
+top_plot(animes_topten$Seinen)
+top_plot(animes_topten$Samurai)
+top_plot(animes_topten$Super_Power)
+top_plot(animes_topten$Vampire)
+top_plot(animes_topten$Josei)
+top_plot(animes_topten$Hentai)
+top_plot(animes_topten$Yaoi)
+top_plot(animes_topten$Space)
+top_plot(animes_topten$Shoujo_Ai)
+top_plot(animes_topten$Shounen_Ai)
+top_plot(animes_topten$Yuri)
+```
+
+
+## Partie 2 
+
+> Proposer une application shiny avec ces données. Vous mettrez en avant l’utilité de votre application (thème et problématique libre). L’application devra être déployée sur shinyapps.io.
+
+Pour répondre à cette deuxième partie, nous avons réalisé une application shiny. Celle ci à pour but d’informer l’utilisateur sur les animes : elle comprend des définitions sur différents termes récurrents et des statistiques descriptives. L'application est assez intuitive, et est destinée à tout individus qui souhaite en apprendre plus sur l'univers de l'animation japonaise. Parallèlement, l'utilisateur aura aussi la possibilité d’enregistrer une liste d’anime à regarder.
+
+Elle est disponible sur le lien : https://showiz.shinyapps.io/Animes_BRISSARD_TSO/
